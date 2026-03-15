@@ -1,106 +1,129 @@
 # Model Meter
 
-`model-meter` is a small developer tool for checking AI usage without digging through vendor dashboards.
+`model-meter` is a small CLI for checking AI tool usage without opening vendor dashboards.
 
-The long-term product shape is:
+Right now, the main working flow is Codex:
 
-- a local CLI
-- a macOS menu bar view
-- one shared model for multiple providers
+- detect your existing Codex login
+- fetch your current Codex usage windows
+- show how much usage is left
 
-## Start here
+## What You Can Do Today
 
-If you want to try the current sample, read [docs/QUICKSTART.md](/Users/bharad/Downloads/model-meter/docs/QUICKSTART.md).
+- run `model-meter codex` to see your current Codex usage
+- run `model-meter codex --json` for machine-readable output
+- run `model-meter status` for a broader provider snapshot
+- use manual counters for providers that do not yet have a supported automated usage surface
 
-If you want the roadmap, read [docs/PLAN.md](/Users/bharad/Downloads/model-meter/docs/PLAN.md).
+## Install
 
-If you want the system design, read [docs/ARCHITECTURE.md](/Users/bharad/Downloads/model-meter/docs/ARCHITECTURE.md).
+### Option 1: run from source
 
-If you want the OpenAI-specific constraints, read [docs/OPENAI_SURFACES.md](/Users/bharad/Downloads/model-meter/docs/OPENAI_SURFACES.md).
+```bash
+cargo run -- codex
+```
 
-## What works today
+### Option 2: install the binary locally
 
-This repo currently ships a small Rust CLI sample.
+```bash
+cargo install --path .
+model-meter codex
+```
 
-Available commands:
+## Quick Start
 
-- `model-meter codex`
-- `model-meter providers`
-- `model-meter auth validate openai`
-- `model-meter auth validate codex`
-- `model-meter auth validate claude`
-- `model-meter usage codex`
-- `model-meter status`
-- `model-meter status --json`
+If you already use the Codex CLI and are logged in, this is the main command:
 
-Current behavior:
+```bash
+model-meter codex
+```
 
-- OpenAI can be detected through `OPENAI_ADMIN_KEY` or an existing Codex CLI login
-- Codex usage can be read from an existing ChatGPT-backed Codex CLI session and shown as percentage left for the current windows through `model-meter codex`
-- Claude currently exposes only a documented in-session `/cost` surface, so this sample still treats Claude as manual outside the Claude session
-- Cursor and similar tools can be shown with manual counters
-- broader vendor sync is still not implemented yet
+Example output:
 
-## What this project is solving
+```text
+Codex usage
+- plan: plus
+- 5h window: 82% left (18% used), resets in 3h 37m
+- weekly window: 93% left (7% used), resets in 5d 3h
+```
 
-Developers want a fast answer to one question:
+For JSON:
 
-`How close am I to my limit?`
+```bash
+model-meter codex --json
+```
 
-That limit can mean different things depending on the provider:
+## How It Works
 
-- API spend
-- credits
-- message caps
-- subscription usage
+For Codex, `model-meter` currently reuses your existing local Codex login session.
 
-That matters because not every provider exposes the same kind of data. Some give official APIs. Some only expose usage in a web UI. Some provide no safe automation path at all.
+That means:
 
-So the project is intentionally built around support levels:
+- you do not need to set a separate OpenAI key just to read Codex usage
+- you do need to be logged in through the Codex CLI already
 
-- `official-api`: trustworthy automated sync
-- `documented-import`: trustworthy import flow
-- `manual`: user-entered counters
-- `unsupported`: no safe automation yet
+You can check that with:
 
-## Product direction
+```bash
+codex login status
+```
 
-The target shape for v1 is:
+## Available Commands
 
-- one core CLI
-- one provider-agnostic data model
-- one SwiftBar plugin that reads CLI JSON output
+```bash
+model-meter codex
+model-meter codex --json
+model-meter providers
+model-meter auth validate openai
+model-meter auth validate codex
+model-meter auth validate claude
+model-meter usage codex
+model-meter usage codex --json
+model-meter status
+model-meter status --json
+```
 
-The recommended implementation stack is:
+## Provider Support
 
-- Go for the main CLI and sync engine
-- SQLite for local cache
-- SwiftBar for the menu bar layer
+Current support is intentionally uneven and explicit.
 
-This keeps the product simple:
+- `codex`: working usage lookup from an existing local Codex session
+- `openai`: auth detection through `OPENAI_ADMIN_KEY` or Codex CLI login
+- `claude`: manual-only outside the Claude session
+- `cursor`: manual counters only
+- `windsurf`: manual counters only
 
-- one binary owns the logic
-- provider integrations stay behind one adapter boundary
-- the menu bar stays thin
+## Manual Counters
 
-## Non-goals for v1
+For providers without a supported automated usage source yet, you can set local counters.
 
-- scraping ChatGPT pages
-- scraping Cursor, Claude, Windsurf, or similar dashboards
-- using undocumented or private endpoints
-- presenting unsupported subscription usage as authoritative
-- building a full native macOS app before the data model is stable
+Examples:
 
-## Working rules
+```bash
+export MODEL_METER_CLAUDE_USED=42
+export MODEL_METER_CLAUDE_LIMIT=100
 
-- billing totals must come from authoritative rows, not ad hoc CLI math
-- the UI must clearly label whether a number is API-backed, imported, manual, or unsupported
-- stale cached data is acceptable for read flows if it is labeled clearly
-- the product should optimize for fast status checks, not heavy reporting
+export MODEL_METER_CURSOR_USED=15
+export MODEL_METER_CURSOR_LIMIT=50
+```
 
-## Official references
+You can also set optional local counters for OpenAI:
 
-- https://platform.openai.com/docs/api-reference/usage/cost
-- https://help.openai.com/en/articles/10478918-api-usage-dashboard
-- https://help.openai.com/en/articles/9687866-admin-and-audit-logs-api-for-the-api-platform
-- https://help.openai.com/en/articles/12642688-using-credits-for-flexible-usage-in-chatgpt-free-go-plus-pro
+```bash
+export MODEL_METER_OPENAI_USED=18
+export MODEL_METER_OPENAI_LIMIT=100
+```
+
+## Current Limitations
+
+- `model-meter codex` is not calling a public documented `codex usage` command
+- it currently relies on the same local session-backed usage path the Codex client appears to use
+- Claude does not yet have a documented non-interactive usage command that this tool can call from outside the Claude session
+- broader multi-provider sync is not implemented yet
+
+## Docs
+
+- [Quickstart](/Users/bharad/Downloads/model-meter/docs/QUICKSTART.md)
+- [Plan](/Users/bharad/Downloads/model-meter/docs/PLAN.md)
+- [Architecture](/Users/bharad/Downloads/model-meter/docs/ARCHITECTURE.md)
+- [OpenAI Surfaces](/Users/bharad/Downloads/model-meter/docs/OPENAI_SURFACES.md)
