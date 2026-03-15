@@ -1,7 +1,7 @@
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
 use reqwest::blocking::Client;
@@ -10,36 +10,32 @@ use serde::Deserialize;
 
 const PROVIDERS: [ProviderSpec; 4] = [
     ProviderSpec {
-        id: "openai",
+        id: "codex",
         display_name: "Codex / OpenAI",
-        support_tier: "official-api",
-        configured_by: "OPENAI_ADMIN_KEY or Codex CLI login",
-        quick_check_hint: "API-backed usage and billing surfaces, plus Codex CLI session detection",
-        note: "Codex CLI login can be detected, but ChatGPT-plan Codex usage is still unsupported without a documented machine-readable surface.",
-    },
-    ProviderSpec {
-        id: "claude",
-        display_name: "Claude",
-        support_tier: "manual",
-        configured_by: "MODEL_METER_CLAUDE_USED and MODEL_METER_CLAUDE_LIMIT",
-        quick_check_hint: "Manual plan counters; Claude Code documents in-session /cost only",
-        note: "Claude Code documents /cost for the current interactive session, but this sample does not have a documented non-interactive usage surface to reuse yet.",
+        support_tier: "session-usage",
+        quick_check_hint: "Reads usage from an existing local Codex ChatGPT session.",
+        note: "This is the strongest working provider today.",
     },
     ProviderSpec {
         id: "cursor",
         display_name: "Cursor",
-        support_tier: "manual",
-        configured_by: "MODEL_METER_CURSOR_USED and MODEL_METER_CURSOR_LIMIT",
-        quick_check_hint: "Manual plan counters",
-        note: "Use manual counters until a trustworthy machine-readable surface exists.",
+        support_tier: "session-account",
+        quick_check_hint: "Detects local Cursor auth state and plan from app storage.",
+        note: "Usage percent is not exposed through the local session data this build can read yet.",
+    },
+    ProviderSpec {
+        id: "claude",
+        display_name: "Claude",
+        support_tier: "session-account",
+        quick_check_hint: "Detects local Claude session markers and plan metadata from app storage.",
+        note: "Usage percent is not exposed through the local session data this build can read yet.",
     },
     ProviderSpec {
         id: "windsurf",
         display_name: "Windsurf",
-        support_tier: "manual",
-        configured_by: "MODEL_METER_WINDSURF_USED and MODEL_METER_WINDSURF_LIMIT",
-        quick_check_hint: "Manual plan counters",
-        note: "Use manual counters until a trustworthy machine-readable surface exists.",
+        support_tier: "session-probe",
+        quick_check_hint: "Probes common local Windsurf / Codeium install and data paths.",
+        note: "Local session reuse is not implemented yet because a stable session store has not been mapped.",
     },
 ];
 
@@ -48,16 +44,8 @@ struct ProviderSpec {
     id: &'static str,
     display_name: &'static str,
     support_tier: &'static str,
-    configured_by: &'static str,
     quick_check_hint: &'static str,
     note: &'static str,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct ManualCounter {
-    used: f64,
-    limit: f64,
-    percentage: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,18 +114,15 @@ struct CodexCreditsResponse {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ProviderState {
-    OfficialApi {
-        configured: bool,
-        auth_state: &'static str,
-        auth_source: &'static str,
-        detail: String,
-    },
-    Manual {
-        counter: Option<ManualCounter>,
-        state: &'static str,
-        detail: String,
-    },
+struct LocalSessionProbe {
+    provider: &'static str,
+    state: &'static str,
+    session_detected: bool,
+    usage_available: bool,
+    auth_source: &'static str,
+    detail: String,
+    email: Option<String>,
+    plan: Option<String>,
 }
 
 fn main() {
@@ -167,12 +152,14 @@ fn run(args: &[String]) -> Result<String, String> {
         .collect();
 
     match filtered_args.as_slice() {
-        ["codex"] => render_codex_usage(json),
+        ["codex"] => render_provider_usage("codex", json),
+        ["cursor"] => render_provider_usage("cursor", json),
+        ["claude"] => render_provider_usage("claude", json),
+        ["windsurf"] => render_provider_usage("windsurf", json),
         ["providers"] => Ok(render_providers(json)),
-        ["auth", "validate"] => render_auth_validation("openai", json),
+        ["auth", "validate"] => render_auth_validation("codex", json),
         ["auth", "validate", provider] => render_auth_validation(provider, json),
-        ["usage", "codex"] => render_codex_usage(json),
-        ["usage", "openai"] => render_codex_usage(json),
+        ["usage", provider] => render_provider_usage(provider, json),
         ["status"] => Ok(render_status(json)),
         ["help"] | ["--help"] | ["-h"] => Ok(help_text()),
         _ => Err(format!(
@@ -186,22 +173,32 @@ fn run(args: &[String]) -> Result<String, String> {
 fn help_text() -> String {
     let mut text = String::new();
     text.push_str("model-meter 0.1.0\n");
-    text.push_str("Quick usage checks for AI tools.\n\n");
+    text.push_str("Model-agnostic usage checks from local AI tool sessions.\n\n");
     text.push_str("Commands:\n");
     text.push_str("  model-meter codex [--json]\n");
+    text.push_str("  model-meter cursor [--json]\n");
+    text.push_str("  model-meter claude [--json]\n");
+    text.push_str("  model-meter windsurf [--json]\n");
+    text.push_str("  model-meter usage [codex|cursor|claude|windsurf] [--json]\n");
+    text.push_str("  model-meter auth validate [codex|cursor|claude|windsurf|openai] [--json]\n");
     text.push_str("  model-meter providers [--json]\n");
-    text.push_str("  model-meter auth validate [openai|codex|claude] [--json]\n");
-    text.push_str("  model-meter usage codex [--json]\n");
     text.push_str("  model-meter status [--json]\n\n");
-    text.push_str("Manual counters:\n");
-    text.push_str("  MODEL_METER_CLAUDE_USED / MODEL_METER_CLAUDE_LIMIT\n");
-    text.push_str("  MODEL_METER_CURSOR_USED / MODEL_METER_CURSOR_LIMIT\n");
-    text.push_str("  MODEL_METER_WINDSURF_USED / MODEL_METER_WINDSURF_LIMIT\n");
-    text.push_str("  MODEL_METER_OPENAI_USED / MODEL_METER_OPENAI_LIMIT\n\n");
-    text.push_str("OpenAI auth:\n");
-    text.push_str("  OPENAI_ADMIN_KEY\n");
-    text.push_str("  or an existing Codex CLI login session\n");
+    text.push_str("Current behavior:\n");
+    text.push_str("  - Codex: working local-session usage snapshot\n");
+    text.push_str("  - Cursor: local-session account detection and plan\n");
+    text.push_str("  - Claude: local-session account detection and plan\n");
+    text.push_str("  - Windsurf: local install/session probing only\n");
     text
+}
+
+fn render_provider_usage(provider: &str, json: bool) -> Result<String, String> {
+    match provider {
+        "codex" | "openai" => render_codex_usage(json),
+        "cursor" => Ok(render_local_probe_usage(&detect_cursor_session(), json)),
+        "claude" => Ok(render_local_probe_usage(&detect_claude_session(), json)),
+        "windsurf" => Ok(render_local_probe_usage(&detect_windsurf_session(), json)),
+        _ => Err(format!("usage is not implemented for provider {provider}")),
+    }
 }
 
 fn render_codex_usage(json: bool) -> Result<String, String> {
@@ -214,17 +211,44 @@ fn render_codex_usage(json: bool) -> Result<String, String> {
     Ok(codex_usage_text(&snapshot))
 }
 
+fn render_local_probe_usage(probe: &LocalSessionProbe, json: bool) -> String {
+    if json {
+        return local_probe_json(probe);
+    }
+
+    let mut text = String::new();
+    let _ = writeln!(text, "{} usage", provider_title(probe.provider));
+
+    if let Some(email) = &probe.email {
+        let _ = writeln!(text, "- account: {email}");
+    }
+    if let Some(plan) = &probe.plan {
+        let _ = writeln!(text, "- plan: {plan}");
+    }
+
+    if probe.usage_available {
+        let _ = writeln!(text, "- usage: available");
+    } else if probe.session_detected {
+        let _ = writeln!(text, "- usage: not exposed through the local session yet");
+    } else {
+        let _ = writeln!(text, "- usage: session not detected");
+    }
+
+    let _ = writeln!(text, "- state: {}", probe.state);
+    let _ = writeln!(text, "- detail: {}", probe.detail);
+    text.trim_end().to_string()
+}
+
 fn render_providers(json: bool) -> String {
     if json {
         let entries = PROVIDERS
             .iter()
             .map(|provider| {
                 format!(
-                    "{{\"id\":\"{}\",\"display_name\":\"{}\",\"support_tier\":\"{}\",\"configured_by\":\"{}\",\"quick_check_hint\":\"{}\",\"note\":\"{}\"}}",
+                    "{{\"id\":\"{}\",\"display_name\":\"{}\",\"support_tier\":\"{}\",\"quick_check_hint\":\"{}\",\"note\":\"{}\"}}",
                     escape_json(provider.id),
                     escape_json(provider.display_name),
                     escape_json(provider.support_tier),
-                    escape_json(provider.configured_by),
                     escape_json(provider.quick_check_hint),
                     escape_json(provider.note),
                 )
@@ -239,82 +263,50 @@ fn render_providers(json: bool) -> String {
     for provider in PROVIDERS {
         let _ = writeln!(
             text,
-            "- {} ({})\n  config: {}\n  note: {}",
-            provider.display_name, provider.support_tier, provider.configured_by, provider.note
+            "- {} ({})\n  hint: {}\n  note: {}",
+            provider.display_name, provider.support_tier, provider.quick_check_hint, provider.note
         );
     }
     text.trim_end().to_string()
 }
 
 fn render_auth_validation(provider: &str, json: bool) -> Result<String, String> {
-    match provider {
-        "openai" | "codex" => render_openai_auth_validation(json),
-        "claude" => render_claude_auth_validation(json),
-        _ => Err(format!(
-            "auth validation is currently implemented only for openai/codex and claude; got {provider}"
-        )),
-    }
-}
-
-fn render_openai_auth_validation(json: bool) -> Result<String, String> {
-    let probe = detect_openai_auth();
-    let valid = probe.configured;
-
-    if json {
-        return Ok(format!(
-            "{{\"provider\":\"openai\",\"valid\":{},\"state\":\"{}\",\"auth_source\":\"{}\",\"detail\":\"{}\"}}",
-            valid,
-            escape_json(probe.auth_state),
-            escape_json(probe.auth_source),
-            escape_json(&probe.detail)
-        ));
-    }
-
-    if valid {
-        Ok(format!(
-            "openai auth: {}\n{}",
-            probe.auth_state, probe.detail
-        ))
-    } else {
-        Err(format!(
-            "openai auth: {}\n{}",
-            probe.auth_state, probe.detail
-        ))
-    }
-}
-
-fn render_claude_auth_validation(json: bool) -> Result<String, String> {
-    let probe = detect_claude_cli_capability();
-    let valid = probe.state == "session-detected";
+    let probe = match provider {
+        "openai" | "codex" => detect_codex_session(),
+        "cursor" => detect_cursor_session(),
+        "claude" => detect_claude_session(),
+        "windsurf" => detect_windsurf_session(),
+        _ => {
+            return Err(format!(
+                "auth validation is currently implemented for codex, cursor, claude, and windsurf; got {provider}"
+            ));
+        }
+    };
 
     if json {
-        return Ok(format!(
-            "{{\"provider\":\"claude\",\"valid\":{},\"state\":\"{}\",\"detail\":\"{}\"}}",
-            valid,
-            escape_json(probe.state),
-            escape_json(&probe.detail)
-        ));
+        return Ok(local_probe_json(&probe));
     }
 
-    if valid {
-        Ok(format!("claude auth: {}\n{}", probe.state, probe.detail))
+    let heading = format!("{} auth", provider_title(probe.provider).to_lowercase());
+    if probe.session_detected {
+        Ok(format!("{heading}: {}\n{}", probe.state, probe.detail))
     } else {
-        Err(format!("claude auth: {}\n{}", probe.state, probe.detail))
+        Err(format!("{heading}: {}\n{}", probe.state, probe.detail))
     }
 }
 
 fn render_status(json: bool) -> String {
-    let mut provider_rows = Vec::new();
-
-    for provider in PROVIDERS {
-        let state = provider_state(provider);
-        provider_rows.push((provider, state));
-    }
+    let probes = vec![
+        detect_codex_session(),
+        detect_cursor_session(),
+        detect_claude_session(),
+        detect_windsurf_session(),
+    ];
 
     if json {
-        let providers = provider_rows
+        let providers = probes
             .iter()
-            .map(|(provider, state)| provider_state_json(provider, state))
+            .map(local_probe_json)
             .collect::<Vec<_>>()
             .join(",");
         return format!("{{\"providers\":[{providers}]}}");
@@ -323,97 +315,36 @@ fn render_status(json: bool) -> String {
     let mut text = String::new();
     text.push_str("Current provider status\n");
 
-    for (provider, state) in provider_rows {
-        match state {
-            ProviderState::OfficialApi {
-                configured,
-                auth_state,
-                auth_source,
-                detail,
-            } => {
-                let status = if configured {
-                    "configured"
-                } else {
-                    "not configured"
-                };
-                let _ = writeln!(
-                    text,
-                    "- {}: {} ({}, {})\n  {}",
-                    provider.display_name, status, auth_state, auth_source, detail
-                );
-            }
-            ProviderState::Manual { counter, state, detail } => {
-                if let Some(counter) = counter {
-                    let _ = writeln!(
-                        text,
-                        "- {}: {:.1}% used ({:.2} / {:.2}) [{}]\n  {}",
-                        provider.display_name,
-                        counter.percentage,
-                        counter.used,
-                        counter.limit,
-                        state,
-                        detail
-                    );
-                } else {
-                    let _ = writeln!(
-                        text,
-                        "- {}: not configured [{}]\n  {}",
-                        provider.display_name, state, detail
-                    );
-                }
-            }
-        }
+    for probe in probes {
+        let status = if probe.session_detected {
+            "session detected"
+        } else {
+            "session not detected"
+        };
+        let usage = if probe.usage_available {
+            "usage available"
+        } else {
+            "usage unavailable"
+        };
+
+        let _ = writeln!(
+            text,
+            "- {}: {} ({}, {})\n  {}",
+            provider_title(probe.provider),
+            status,
+            probe.state,
+            usage,
+            probe.detail
+        );
     }
 
     if let Ok(snapshot) = fetch_codex_usage() {
         text.push('\n');
-        text.push_str("\nCodex usage snapshot\n");
+        text.push_str("Codex usage snapshot\n");
         append_codex_usage_lines(&mut text, &snapshot);
     }
 
     text.trim_end().to_string()
-}
-
-fn provider_state(provider: ProviderSpec) -> ProviderState {
-    match provider.id {
-        "openai" => {
-            let auth_probe = detect_openai_auth();
-            let manual_counter = read_manual_counter("OPENAI");
-            let detail = match (auth_probe.configured, manual_counter.as_ref()) {
-                (true, Ok(Some(counter))) => format!(
-                    "{} Manual quick-check counter: {:.1}% used ({:.2} / {:.2}).",
-                    auth_probe.detail,
-                    counter.percentage, counter.used, counter.limit
-                ),
-                (true, Ok(None)) => format!(
-                    "{} Add MODEL_METER_OPENAI_USED and MODEL_METER_OPENAI_LIMIT for a local quick-check sample.",
-                    auth_probe.detail
-                ),
-                (false, Ok(Some(counter))) => format!(
-                    "{} Manual quick-check counter: {:.1}% used ({:.2} / {:.2}).",
-                    auth_probe.detail,
-                    counter.percentage, counter.used, counter.limit
-                ),
-                (false, Ok(None)) => auth_probe.detail.clone(),
-                (_, Err(err)) => err.clone(),
-            };
-
-            ProviderState::OfficialApi {
-                configured: auth_probe.configured,
-                auth_state: auth_probe.auth_state,
-                auth_source: auth_probe.auth_source,
-                detail,
-            }
-        }
-        "claude" => claude_provider_state(provider.note),
-        "cursor" => manual_provider_state("CURSOR", provider.note),
-        "windsurf" => manual_provider_state("WINDSURF", provider.note),
-        _ => ProviderState::Manual {
-            counter: None,
-            state: "unsupported",
-            detail: "No provider state is available.".to_string(),
-        },
-    }
 }
 
 fn fetch_codex_usage() -> Result<CodexUsageSnapshot, String> {
@@ -594,6 +525,423 @@ fn codex_window_json(window: &CodexWindow) -> String {
     )
 }
 
+fn detect_codex_session() -> LocalSessionProbe {
+    if let Ok(auth) = read_codex_auth_file()
+        && auth.auth_mode.as_deref() == Some("chatgpt")
+        && let Some(tokens) = auth.tokens
+        && tokens.access_token.as_deref().is_some_and(|value| !value.trim().is_empty())
+    {
+        return LocalSessionProbe {
+            provider: "codex",
+            state: "session-detected",
+            session_detected: true,
+            usage_available: true,
+            auth_source: "codex-auth-file",
+            detail: "Local Codex ChatGPT session detected through ~/.codex/auth.json.".to_string(),
+            email: None,
+            plan: None,
+        };
+    }
+
+    LocalSessionProbe {
+        provider: "codex",
+        state: "missing",
+        session_detected: false,
+        usage_available: false,
+        auth_source: "none",
+        detail: "Run `codex login` first so model-meter can reuse the local Codex session.".to_string(),
+        email: None,
+        plan: None,
+    }
+}
+
+fn detect_cursor_session() -> LocalSessionProbe {
+    let path = match cursor_state_db_path() {
+        Some(path) => path,
+        None => {
+            return LocalSessionProbe {
+                provider: "cursor",
+                state: "missing",
+                session_detected: false,
+                usage_available: false,
+                auth_source: "none",
+                detail: "Cursor user state was not found in the standard local app data path.".to_string(),
+                email: None,
+                plan: None,
+            };
+        }
+    };
+
+    let email = sqlite_query_scalar(&path, "ItemTable", "cursorAuth/cachedEmail");
+    let plan = sqlite_query_scalar(&path, "ItemTable", "cursorAuth/stripeMembershipType");
+    let session_detected = email.is_some() || plan.is_some();
+
+    if !session_detected {
+        return LocalSessionProbe {
+            provider: "cursor",
+            state: "session-unknown",
+            session_detected: false,
+            usage_available: false,
+            auth_source: "cursor-state-db",
+            detail: format!(
+                "Cursor state DB exists at {}, but no cached account markers were found.",
+                path.display()
+            ),
+            email: None,
+            plan: None,
+        };
+    }
+
+    let detail = match (&email, &plan) {
+        (Some(email), Some(plan)) => format!(
+            "Local Cursor session markers were detected in {} for {email} on the {plan} plan. Current local state does not expose quota or remaining percentage yet.",
+            path.display()
+        ),
+        (Some(email), None) => format!(
+            "Local Cursor session markers were detected in {} for {email}. Current local state does not expose quota or remaining percentage yet.",
+            path.display()
+        ),
+        (None, Some(plan)) => format!(
+            "Local Cursor session markers were detected in {} with plan {plan}. Current local state does not expose quota or remaining percentage yet.",
+            path.display()
+        ),
+        (None, None) => unreachable!(),
+    };
+
+    LocalSessionProbe {
+        provider: "cursor",
+        state: "session-detected",
+        session_detected: true,
+        usage_available: false,
+        auth_source: "cursor-state-db",
+        detail,
+        email,
+        plan,
+    }
+}
+
+fn detect_claude_session() -> LocalSessionProbe {
+    let app_dir = match claude_app_support_dir() {
+        Some(path) => path,
+        None => {
+            return LocalSessionProbe {
+                provider: "claude",
+                state: "missing",
+                session_detected: false,
+                usage_available: false,
+                auth_source: "none",
+                detail: "Claude app data was not found in the standard local app data path.".to_string(),
+                email: None,
+                plan: None,
+            };
+        }
+    };
+
+    let metadata = read_claude_local_metadata(&app_dir);
+    let session_cookie_present = claude_cookie_marker_exists(&app_dir);
+    let session_detected = session_cookie_present || metadata.email.is_some() || metadata.plan.is_some();
+
+    if !session_detected {
+        return LocalSessionProbe {
+            provider: "claude",
+            state: "session-unknown",
+            session_detected: false,
+            usage_available: false,
+            auth_source: "claude-local-storage",
+            detail: format!(
+                "Claude app data exists at {}, but no reusable local session markers were found.",
+                app_dir.display()
+            ),
+            email: None,
+            plan: None,
+        };
+    }
+
+    let mut detail = format!(
+        "Local Claude desktop session markers were detected in {}.",
+        app_dir.display()
+    );
+    if let Some(org_type) = &metadata.org_type {
+        let _ = write!(detail, " Organization type: {org_type}.");
+    }
+    detail.push_str(" Current local state does not expose quota or remaining percentage yet.");
+
+    LocalSessionProbe {
+        provider: "claude",
+        state: "session-detected",
+        session_detected: true,
+        usage_available: false,
+        auth_source: "claude-local-storage",
+        detail,
+        email: metadata.email,
+        plan: metadata.plan,
+    }
+}
+
+fn detect_windsurf_session() -> LocalSessionProbe {
+    let app_paths = windsurf_paths();
+    if app_paths.is_empty() {
+        return LocalSessionProbe {
+            provider: "windsurf",
+            state: "missing",
+            session_detected: false,
+            usage_available: false,
+            auth_source: "none",
+            detail: "Windsurf or Codeium local app data was not found in the standard macOS paths.".to_string(),
+            email: None,
+            plan: None,
+        };
+    }
+
+    let joined = app_paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    LocalSessionProbe {
+        provider: "windsurf",
+        state: "install-detected",
+        session_detected: false,
+        usage_available: false,
+        auth_source: "windsurf-local-paths",
+        detail: format!(
+            "Windsurf-related local paths were found at {joined}, but this build does not yet know which files hold a reusable logged-in session."
+        ),
+        email: None,
+        plan: None,
+    }
+}
+
+fn local_probe_json(probe: &LocalSessionProbe) -> String {
+    let email_json = probe
+        .email
+        .as_ref()
+        .map(|value| format!("\"{}\"", escape_json(value)))
+        .unwrap_or_else(|| "null".to_string());
+    let plan_json = probe
+        .plan
+        .as_ref()
+        .map(|value| format!("\"{}\"", escape_json(value)))
+        .unwrap_or_else(|| "null".to_string());
+
+    format!(
+        "{{\"provider\":\"{}\",\"state\":\"{}\",\"session_detected\":{},\"usage_available\":{},\"auth_source\":\"{}\",\"email\":{},\"plan\":{},\"detail\":\"{}\"}}",
+        escape_json(probe.provider),
+        escape_json(probe.state),
+        probe.session_detected,
+        probe.usage_available,
+        escape_json(probe.auth_source),
+        email_json,
+        plan_json,
+        escape_json(&probe.detail)
+    )
+}
+
+fn read_codex_auth_file() -> Result<CodexAuthFile, String> {
+    let path = codex_auth_file_path()?;
+    let contents = fs::read_to_string(&path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    serde_json::from_str(&contents).map_err(|err| format!("failed to parse Codex auth file: {err}"))
+}
+
+fn codex_auth_file_path() -> Result<PathBuf, String> {
+    let home = env::var("HOME").map_err(|_| "HOME is not set.".to_string())?;
+    Ok(PathBuf::from(home).join(".codex").join("auth.json"))
+}
+
+fn codex_base_url() -> String {
+    env::var("MODEL_METER_CODEX_BASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "https://chatgpt.com/backend-api".to_string())
+}
+
+fn cursor_state_db_path() -> Option<PathBuf> {
+    home_dir().map(|home| {
+        home.join("Library")
+            .join("Application Support")
+            .join("Cursor")
+            .join("User")
+            .join("globalStorage")
+            .join("state.vscdb")
+    }).filter(|path| path.exists())
+}
+
+fn claude_app_support_dir() -> Option<PathBuf> {
+    home_dir()
+        .map(|home| home.join("Library").join("Application Support").join("Claude"))
+        .filter(|path| path.exists())
+}
+
+fn windsurf_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(home) = home_dir() {
+        let app_support = home.join("Library").join("Application Support");
+        for name in ["Windsurf", "Codeium"] {
+            let path = app_support.join(name);
+            if path.exists() {
+                paths.push(path);
+            }
+        }
+    }
+    for path in [
+        PathBuf::from("/Applications/Windsurf.app"),
+        PathBuf::from("/Applications/Codeium.app"),
+    ] {
+        if path.exists() {
+            paths.push(path);
+        }
+    }
+    paths
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var("HOME").ok().map(PathBuf::from)
+}
+
+fn sqlite_query_scalar(path: &Path, table: &str, key: &str) -> Option<String> {
+    let query = format!(
+        "select quote(value) from {table} where key='{}' limit 1;",
+        key.replace('\'', "''")
+    );
+    let output = run_command("sqlite3", &[path.to_string_lossy().as_ref(), query.as_str()]).ok()?;
+    parse_sqlite_quoted_scalar(&output)
+}
+
+fn parse_sqlite_quoted_scalar(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "NULL" {
+        return None;
+    }
+    if let Some(stripped) = trimmed.strip_prefix('\'').and_then(|value| value.strip_suffix('\'')) {
+        let unescaped = stripped.replace("''", "'");
+        let cleaned = unescaped.trim().to_string();
+        if cleaned.is_empty() {
+            None
+        } else {
+            Some(cleaned)
+        }
+    } else {
+        let cleaned = trimmed.to_string();
+        if cleaned.is_empty() {
+            None
+        } else {
+            Some(cleaned)
+        }
+    }
+}
+
+struct ClaudeLocalMetadata {
+    email: Option<String>,
+    plan: Option<String>,
+    org_type: Option<String>,
+}
+
+fn read_claude_local_metadata(app_dir: &Path) -> ClaudeLocalMetadata {
+    let leveldb = app_dir.join("Local Storage").join("leveldb");
+    let mut email = None;
+    let mut plan = None;
+    let mut org_type = None;
+
+    if let Ok(entries) = fs::read_dir(leveldb) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Ok(contents) = fs::read(&path) {
+                for chunk in printable_chunks(&contents) {
+                    if email.is_none() {
+                        email = extract_json_string_field(&chunk, "email");
+                    }
+                    if plan.is_none() {
+                        plan = extract_json_string_field(&chunk, "subscription_plan")
+                            .or_else(|| extract_json_string_field(&chunk, "plan"));
+                    }
+                    if org_type.is_none() {
+                        org_type = extract_json_string_field(&chunk, "org_type");
+                    }
+                    if email.is_some() && plan.is_some() && org_type.is_some() {
+                        return ClaudeLocalMetadata {
+                            email,
+                            plan,
+                            org_type,
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    ClaudeLocalMetadata {
+        email,
+        plan,
+        org_type,
+    }
+}
+
+fn claude_cookie_marker_exists(app_dir: &Path) -> bool {
+    let cookie_path = app_dir.join("Cookies");
+    if !cookie_path.exists() {
+        return false;
+    }
+
+    let query = "select count(*) from cookies where host_key like '%claude.ai%' and name in ('sessionKey','lastActiveOrg');";
+    let output = match run_command("sqlite3", &[cookie_path.to_string_lossy().as_ref(), query]) {
+        Ok(output) => output,
+        Err(_) => return false,
+    };
+
+    output.trim().parse::<u64>().map(|count| count > 0).unwrap_or(false)
+}
+
+fn printable_chunks(bytes: &[u8]) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+
+    for &byte in bytes {
+        let ch = byte as char;
+        if ch.is_ascii_graphic() || ch == ' ' {
+            current.push(ch);
+        } else {
+            if current.len() >= 24 {
+                chunks.push(current.clone());
+            }
+            current.clear();
+        }
+    }
+
+    if current.len() >= 24 {
+        chunks.push(current);
+    }
+
+    chunks
+}
+
+fn extract_json_string_field(haystack: &str, field: &str) -> Option<String> {
+    let needle = format!("\"{field}\":\"");
+    let start = haystack.find(&needle)? + needle.len();
+    let rest = &haystack[start..];
+    let end = rest.find('"')?;
+    let value = &rest[..end];
+    if value.trim().is_empty() || value == "null" {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn provider_title(provider: &str) -> &'static str {
+    match provider {
+        "codex" | "openai" => "Codex",
+        "cursor" => "Cursor",
+        "claude" => "Claude",
+        "windsurf" => "Windsurf",
+        _ => "Provider",
+    }
+}
+
 fn format_reset_detail(window: &CodexWindow) -> String {
     if let Some(seconds) = window.reset_after_seconds {
         return format!("in {}", format_duration_seconds(seconds));
@@ -622,206 +970,6 @@ fn format_duration_seconds(total_seconds: i64) -> String {
     }
 }
 
-fn read_codex_auth_file() -> Result<CodexAuthFile, String> {
-    let path = codex_auth_file_path()?;
-    let contents = fs::read_to_string(&path)
-        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
-    serde_json::from_str(&contents).map_err(|err| format!("failed to parse Codex auth file: {err}"))
-}
-
-fn codex_auth_file_path() -> Result<PathBuf, String> {
-    let home = env::var("HOME").map_err(|_| "HOME is not set.".to_string())?;
-    Ok(PathBuf::from(home).join(".codex").join("auth.json"))
-}
-
-fn codex_base_url() -> String {
-    env::var("MODEL_METER_CODEX_BASE_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "https://chatgpt.com/backend-api".to_string())
-}
-
-fn claude_provider_state(note: &str) -> ProviderState {
-    match read_manual_counter("CLAUDE") {
-        Ok(Some(counter)) => ProviderState::Manual {
-            detail: format!("Manual plan counter is configured. {note}"),
-            counter: Some(counter),
-            state: "manual",
-        },
-        Ok(None) => {
-            let probe = detect_claude_cli_capability();
-            ProviderState::Manual {
-                counter: None,
-                state: probe.state,
-                detail: probe.detail,
-            }
-        }
-        Err(err) => ProviderState::Manual {
-            counter: None,
-            state: "invalid-config",
-            detail: err,
-        },
-    }
-}
-
-fn manual_provider_state(prefix: &str, note: &str) -> ProviderState {
-    match read_manual_counter(prefix) {
-        Ok(Some(counter)) => ProviderState::Manual {
-            detail: format!("Manual plan counter is configured. {note}"),
-            counter: Some(counter),
-            state: "manual",
-        },
-        Ok(None) => ProviderState::Manual {
-            counter: None,
-            state: "manual",
-            detail: format!(
-                "Set MODEL_METER_{prefix}_USED and MODEL_METER_{prefix}_LIMIT. {note}"
-            ),
-        },
-        Err(err) => ProviderState::Manual {
-            counter: None,
-            state: "invalid-config",
-            detail: err,
-        },
-    }
-}
-
-fn provider_state_json(provider: &ProviderSpec, state: &ProviderState) -> String {
-    match state {
-        ProviderState::OfficialApi {
-            configured,
-            auth_state,
-            auth_source,
-            detail,
-        } => {
-            let manual = read_manual_counter("OPENAI").ok().flatten();
-            let manual_json = match manual {
-                Some(counter) => format!(
-                    ",\"manual_counter\":{{\"used\":{:.2},\"limit\":{:.2},\"percentage\":{:.1}}}",
-                    counter.used, counter.limit, counter.percentage
-                ),
-                None => String::new(),
-            };
-
-            format!(
-                "{{\"id\":\"{}\",\"display_name\":\"{}\",\"support_tier\":\"{}\",\"configured\":{},\"auth_state\":\"{}\",\"auth_source\":\"{}\",\"detail\":\"{}\"{}}}",
-                escape_json(provider.id),
-                escape_json(provider.display_name),
-                escape_json(provider.support_tier),
-                configured,
-                escape_json(auth_state),
-                escape_json(auth_source),
-                escape_json(detail),
-                manual_json
-            )
-        }
-        ProviderState::Manual {
-            counter,
-            state,
-            detail,
-        } => {
-            let counter_json = match counter {
-                Some(counter) => format!(
-                    "\"counter\":{{\"used\":{:.2},\"limit\":{:.2},\"percentage\":{:.1}}},",
-                    counter.used, counter.limit, counter.percentage
-                ),
-                None => String::new(),
-            };
-
-            format!(
-                "{{\"id\":\"{}\",\"display_name\":\"{}\",\"support_tier\":\"{}\",{}\"state\":\"{}\",\"detail\":\"{}\"}}",
-                escape_json(provider.id),
-                escape_json(provider.display_name),
-                escape_json(provider.support_tier),
-                counter_json,
-                escape_json(state),
-                escape_json(detail)
-            )
-        }
-    }
-}
-
-struct OpenAiAuthProbe {
-    configured: bool,
-    auth_state: &'static str,
-    auth_source: &'static str,
-    detail: String,
-}
-
-struct ClaudeCapabilityProbe {
-    state: &'static str,
-    detail: String,
-}
-
-fn detect_openai_auth() -> OpenAiAuthProbe {
-    if let Some(value) = env::var("OPENAI_ADMIN_KEY").ok().filter(|v| !v.trim().is_empty()) {
-        let _ = value;
-        return OpenAiAuthProbe {
-            configured: true,
-            auth_state: "configured",
-            auth_source: "env",
-            detail: "OPENAI_ADMIN_KEY is present. Codex CLI login is not required for API-backed work.".to_string(),
-        };
-    }
-
-    if !command_exists("codex") {
-        return OpenAiAuthProbe {
-            configured: false,
-            auth_state: "missing",
-            auth_source: "none",
-            detail: "Set OPENAI_ADMIN_KEY for API-backed work, or log in via the Codex CLI. ChatGPT-plan Codex usage still has no documented machine-readable usage export in this sample.".to_string(),
-        };
-    }
-
-    match run_command("codex", &["login", "status"]) {
-        Ok(output) if output.contains("Logged in") => OpenAiAuthProbe {
-            configured: true,
-            auth_state: "configured",
-            auth_source: "codex-cli-session",
-            detail: "Codex CLI login was detected through `codex login status`. This is enough for session-aware onboarding, but this sample does not have a documented Codex usage command to pull ChatGPT-plan usage automatically.".to_string(),
-        },
-        Ok(output) => OpenAiAuthProbe {
-            configured: false,
-            auth_state: "missing",
-            auth_source: "none",
-            detail: format!(
-                "Codex CLI is installed, but no logged-in session was detected. Output: {}",
-                output.trim()
-            ),
-        },
-        Err(err) => OpenAiAuthProbe {
-            configured: false,
-            auth_state: "unknown",
-            auth_source: "codex-cli-session",
-            detail: format!(
-                "Codex CLI is installed, but session status could not be confirmed: {err}"
-            ),
-        },
-    }
-}
-
-fn detect_claude_cli_capability() -> ClaudeCapabilityProbe {
-    if !command_exists("claude") {
-        return ClaudeCapabilityProbe {
-            state: "manual",
-            detail: "Set MODEL_METER_CLAUDE_USED and MODEL_METER_CLAUDE_LIMIT. Claude Code documents `/cost` for the current interactive session, but this sample does not have a documented non-interactive login or usage command to call yet.".to_string(),
-        };
-    }
-
-    ClaudeCapabilityProbe {
-        state: "session-unknown",
-        detail: "Claude CLI is installed. Anthropic documents `/cost` for the current interactive session, but this sample does not have a documented non-interactive login status or usage command to reuse yet, so automatic Claude usage sync remains unavailable.".to_string(),
-    }
-}
-
-fn command_exists(command: &str) -> bool {
-    Command::new(command)
-        .arg("--help")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
 fn run_command(command: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(command)
         .args(args)
@@ -844,41 +992,6 @@ fn run_command(command: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-fn read_manual_counter(prefix: &str) -> Result<Option<ManualCounter>, String> {
-    let used_key = format!("MODEL_METER_{prefix}_USED");
-    let limit_key = format!("MODEL_METER_{prefix}_LIMIT");
-
-    let used = env::var(&used_key).ok();
-    let limit = env::var(&limit_key).ok();
-
-    match (used, limit) {
-        (None, None) => Ok(None),
-        (Some(_), None) | (None, Some(_)) => Err(format!(
-            "both {used_key} and {limit_key} must be set together"
-        )),
-        (Some(used), Some(limit)) => {
-            let used_value = parse_number(&used_key, &used)?;
-            let limit_value = parse_number(&limit_key, &limit)?;
-            if limit_value <= 0.0 {
-                return Err(format!("{limit_key} must be greater than 0"));
-            }
-
-            Ok(Some(ManualCounter {
-                used: used_value,
-                limit: limit_value,
-                percentage: (used_value / limit_value) * 100.0,
-            }))
-        }
-    }
-}
-
-fn parse_number(key: &str, value: &str) -> Result<f64, String> {
-    value
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| format!("{key} must be a number, got {value:?}"))
-}
-
 fn escape_json(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for ch in value.chars() {
@@ -899,44 +1012,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_manual_counter() {
-        unsafe {
-            env::set_var("MODEL_METER_CLAUDE_USED", "25");
-            env::set_var("MODEL_METER_CLAUDE_LIMIT", "100");
-        }
-
-        let counter = read_manual_counter("CLAUDE").unwrap().unwrap();
-        assert_eq!(counter.used, 25.0);
-        assert_eq!(counter.limit, 100.0);
-        assert_eq!(counter.percentage, 25.0);
-
-        unsafe {
-            env::remove_var("MODEL_METER_CLAUDE_USED");
-            env::remove_var("MODEL_METER_CLAUDE_LIMIT");
-        }
-    }
-
-    #[test]
-    fn rejects_partial_manual_counter() {
-        unsafe {
-            env::set_var("MODEL_METER_CURSOR_USED", "4");
-            env::remove_var("MODEL_METER_CURSOR_LIMIT");
-        }
-
-        let err = read_manual_counter("CURSOR").unwrap_err();
-        assert!(err.contains("must be set together"));
-
-        unsafe {
-            env::remove_var("MODEL_METER_CURSOR_USED");
-        }
-    }
-
-    #[test]
     fn renders_help_for_empty_args() {
         let output = run(&[]).unwrap();
         assert!(output.contains("model-meter 0.1.0"));
         assert!(output.contains("model-meter status"));
         assert!(output.contains("model-meter codex"));
+        assert!(output.contains("model-meter cursor"));
     }
 
     #[test]
@@ -949,6 +1030,13 @@ mod tests {
             (Err(short_err), Err(long_err)) => assert_eq!(short_err, long_err),
             _ => panic!("short and long codex commands should behave the same"),
         }
+    }
+
+    #[test]
+    fn short_cursor_command_routes_to_usage() {
+        let short = run(&["cursor".to_string()]).unwrap();
+        let long = run(&["usage".to_string(), "cursor".to_string()]).unwrap();
+        assert_eq!(short, long);
     }
 
     #[test]
@@ -971,5 +1059,28 @@ mod tests {
         assert_eq!(snapshot.reset_at, Some(100));
         assert_eq!(snapshot.reset_after_seconds, Some(200));
         assert_eq!(snapshot.window_seconds, Some(300));
+    }
+
+    #[test]
+    fn parses_sqlite_quoted_scalars() {
+        assert_eq!(
+            parse_sqlite_quoted_scalar("'free'"),
+            Some("free".to_string())
+        );
+        assert_eq!(parse_sqlite_quoted_scalar("NULL"), None);
+        assert_eq!(parse_sqlite_quoted_scalar("''"), None);
+    }
+
+    #[test]
+    fn extracts_json_string_field_from_chunk() {
+        let chunk = r#"{"email":"a@example.com","subscription_plan":"claude_free","org_type":"claude_free"}"#;
+        assert_eq!(
+            extract_json_string_field(chunk, "email"),
+            Some("a@example.com".to_string())
+        );
+        assert_eq!(
+            extract_json_string_field(chunk, "subscription_plan"),
+            Some("claude_free".to_string())
+        );
     }
 }
