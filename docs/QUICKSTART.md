@@ -13,6 +13,10 @@ cargo build
 ```bash
 cargo run -- providers
 cargo run -- auth validate openai
+cargo run -- auth validate codex
+cargo run -- auth validate claude
+cargo run -- usage codex
+cargo run -- usage codex --json
 cargo run -- status
 cargo run -- status --json
 ```
@@ -23,6 +27,12 @@ If you set `OPENAI_ADMIN_KEY`, the sample will treat OpenAI as configured for AP
 
 ```bash
 export OPENAI_ADMIN_KEY=your-key
+```
+
+If you are already logged in through the Codex CLI, the sample can also detect that session:
+
+```bash
+codex login status
 ```
 
 ## 4. Optional: add local usage counters
@@ -49,10 +59,15 @@ export MODEL_METER_CURSOR_LIMIT=50
 ## What to expect
 
 - `providers` shows the supported providers known by the sample
-- `auth validate openai` checks whether `OPENAI_ADMIN_KEY` is present
+- `auth validate openai` checks for `OPENAI_ADMIN_KEY` first, then falls back to Codex CLI session detection
+- `auth validate codex` reports whether a Codex CLI session is present
+- `auth validate claude` explains the current Claude limitation
+- `usage codex` fetches the current Codex usage windows from the logged-in local Codex session and shows percent left
 - `status` prints a human-readable summary
 - `status --json` prints the same data in JSON form
 
 ## Important limitation
 
-The counters above are manual sample values, not authoritative provider data.
+- The counters above are manual sample values, not authoritative provider data.
+- `usage codex` currently relies on the same session-backed usage path the local Codex client uses, not on a public documented `codex usage` command.
+- Claude Code documents `/cost` for the current interactive session, but this sample does not yet have a documented non-interactive Claude usage surface to call from outside that session.

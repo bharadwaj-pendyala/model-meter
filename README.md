@@ -26,14 +26,19 @@ Available commands:
 
 - `model-meter providers`
 - `model-meter auth validate openai`
+- `model-meter auth validate codex`
+- `model-meter auth validate claude`
+- `model-meter usage codex`
 - `model-meter status`
 - `model-meter status --json`
 
 Current behavior:
 
-- OpenAI auth is checked locally through `OPENAI_ADMIN_KEY`
-- Claude, Cursor, and similar tools can be shown with manual counters
-- no live vendor sync is implemented yet
+- OpenAI can be detected through `OPENAI_ADMIN_KEY` or an existing Codex CLI login
+- Codex usage can be read from an existing ChatGPT-backed Codex CLI session and shown as percentage left for the current windows
+- Claude currently exposes only a documented in-session `/cost` surface, so this sample still treats Claude as manual outside the Claude session
+- Cursor and similar tools can be shown with manual counters
+- broader vendor sync is still not implemented yet
 
 ## What this project is solving
 
