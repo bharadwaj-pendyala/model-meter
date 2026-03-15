@@ -1,12 +1,22 @@
 # Model Meter
 
-`model-meter` is an open-source, model-agnostic CLI for checking AI tool usage from the terminal.
+`model-meter` is an open-source, model-agnostic CLI for tracking AI tool usage from the terminal.
 
 The project is intended to be provider-agnostic:
 
-- one tool for checking usage across AI products
+- one tool for checking usage across AI products such as Codex, Cursor, Claude, and Windsurf
 - one clear support model for automated, manual, and unsupported providers
 - start with the integrations that are practical today and expand carefully over time
+
+## At A Glance
+
+Use `model-meter` if you want a tool that helps you:
+
+- check Codex usage from the CLI
+- track AI usage across tools like Codex, Cursor, Claude, and Windsurf
+- understand what is supported today and what is still manual or unsupported
+
+The current strongest integration is Codex. The broader product direction is a shared usage meter across multiple AI coding tools.
 
 ## Current Support
 
@@ -31,6 +41,16 @@ Current provider state:
 - `claude`: manual-only outside the Claude session
 - `cursor`: manual-only
 - `windsurf`: manual-only
+
+## Provider Support Matrix
+
+| Provider | Current support | What it means |
+| --- | --- | --- |
+| Codex | Working usage snapshot | `model-meter codex` shows current usage left from an existing local Codex session |
+| Cursor | Manual | you can represent usage with local counters for now |
+| Claude | Manual / partial | manual counters today; no supported non-interactive usage command integrated yet |
+| Windsurf | Manual | you can represent usage with local counters for now |
+| OpenAI API | Auth detection | API auth can be detected, but full usage syncing is not the current primary flow |
 
 ## What This Tool Does Not Do Yet
 
@@ -87,6 +107,14 @@ model-meter status
 model-meter status --json
 ```
 
+If you found this repository because you were searching for any of these, you are in the right place:
+
+- track Codex usage from CLI
+- AI usage tracker for Cursor
+- Claude usage meter
+- Windsurf usage tracker
+- model-agnostic AI usage tool
+
 ## Requirements For `model-meter codex`
 
 `model-meter codex` is one provider-specific command inside a broader model-agnostic CLI.
@@ -128,6 +156,12 @@ What users can expect next:
 - more reliable configuration and error messages
 - expansion to additional providers such as Claude, Cursor, Windsurf, and future tools only where the data source is trustworthy
 - a menu bar layer once the CLI contract is stable
+
+What this means in practice:
+
+- Codex should keep getting easier to install and use
+- other providers should move from manual support to stronger integrations only when the data source is safe and maintainable
+- the project should become a clearer answer to “how do I track my AI tool usage across multiple coding tools?”
 
 What will continue to guide the project:
 
