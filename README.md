@@ -1,120 +1,100 @@
 # Model Meter
 
-Plan and design docs for a tracker that exposes AI tool cost and usage data through:
+`model-meter` is a small developer tool for checking AI usage without digging through vendor dashboards.
+
+The long-term product shape is:
 
 - a local CLI
-- a macOS menu bar plugin
+- a macOS menu bar view
+- one shared model for multiple providers
 
-## Current sample
+## Start here
 
-This repo now includes an initial local CLI sample in Rust:
+If you want to try the current sample, read [docs/QUICKSTART.md](/Users/bharad/Downloads/model-meter/docs/QUICKSTART.md).
+
+If you want the roadmap, read [docs/PLAN.md](/Users/bharad/Downloads/model-meter/docs/PLAN.md).
+
+If you want the system design, read [docs/ARCHITECTURE.md](/Users/bharad/Downloads/model-meter/docs/ARCHITECTURE.md).
+
+If you want the OpenAI-specific constraints, read [docs/OPENAI_SURFACES.md](/Users/bharad/Downloads/model-meter/docs/OPENAI_SURFACES.md).
+
+## What works today
+
+This repo currently ships a small Rust CLI sample.
+
+Available commands:
 
 - `model-meter providers`
 - `model-meter auth validate openai`
 - `model-meter status`
 - `model-meter status --json`
 
-The current implementation is intentionally small:
+Current behavior:
 
-- OpenAI/Codex auth is checked locally through `OPENAI_ADMIN_KEY`
-- subscription-oriented providers like Claude, Cursor, and Windsurf can be represented with manual counters for quick status checks
-- no vendor network sync is implemented yet
+- OpenAI auth is checked locally through `OPENAI_ADMIN_KEY`
+- Claude, Cursor, and similar tools can be shown with manual counters
+- no live vendor sync is implemented yet
 
-See [docs/QUICKSTART.md](/Users/bharad/Downloads/model-meter/docs/QUICKSTART.md) for sample usage.
+## What this project is solving
 
-## Why this project
+Developers want a fast answer to one question:
 
-The product direction is:
+`How close am I to my limit?`
 
-- help indie developers quickly check their current AI tool usage while they are working
-- support multiple tools/providers over time
-- start with the products developers already pay for, such as Codex/OpenAI and Claude
+That limit can mean different things depending on the provider:
 
-That means the architecture should be provider-agnostic even if v1 ships with a single integration.
+- API spend
+- credits
+- message caps
+- subscription usage
 
-The product problem is broader than API billing:
+That matters because not every provider exposes the same kind of data. Some give official APIs. Some only expose usage in a web UI. Some provide no safe automation path at all.
 
-- many indie developers care about subscription-plan usage, credits, caps, or message limits
-- many of those surfaces live in vendor product UIs rather than stable public APIs
-- some users will have API usage in parallel, but that is not the default mental model for the target audience
+So the project is intentionally built around support levels:
 
-The main limitation is important:
+- `official-api`: trustworthy automated sync
+- `documented-import`: trustworthy import flow
+- `manual`: user-entered counters
+- `unsupported`: no safe automation yet
 
-- API org usage and spend: sometimes officially trackable via API
-- subscription-plan usage: often visible in vendor dashboards, but not consistently exposed through public APIs
+## Product direction
 
-Because of that, the product should be framed as a usage meter first, with multiple evidence levels:
+The target shape for v1 is:
 
-- official API sync where supported
-- user-provided imports or manual counters where official APIs do not exist
-- clear unsupported states where the product cannot safely infer subscription usage
+- one core CLI
+- one provider-agnostic data model
+- one SwiftBar plugin that reads CLI JSON output
 
-## Recommended v1 shape
+The recommended implementation stack is:
 
-Use a single Go codebase for a provider-agnostic core tracker and CLI, then expose it in the macOS menu bar via a SwiftBar plugin.
+- Go for the main CLI and sync engine
+- SQLite for local cache
+- SwiftBar for the menu bar layer
 
-Why this shape:
+This keeps the product simple:
 
-- Go gives a simple single-binary CLI with low runtime overhead
-- the tracker logic lives in one place
-- provider-specific fetchers can plug into one shared storage and reporting model
-- SwiftBar is already a menu bar plugin system, so it is the fastest route to a usable macOS menu bar experience
-- this avoids building and maintaining a native macOS app before the data contracts are stable
-
-## Proposed deliverables
-
-- `model-meter` CLI binary
-- SwiftBar plugin script that calls `model-meter status --json`
-- an internal provider adapter boundary so other tools can be added later
-- local cache and budget state
-- install script for the CLI and plugin
-- launchd job for periodic refresh
-
-Naming note:
-
-- use `model-meter` as the product and binary name from the start
-- if needed during migration, `codex-cost` can exist only as a temporary alias, not as the primary UX surface
-
-## Core features
-
-- a quick current-status view for the tools the user actively uses
-- provider-level rollups so a user can compare Codex, Claude, Cursor, Windsurf, and future integrations
-- usage-level visibility aligned to each provider surface: spend, credits, message caps, or budget progress
-- budget progress and threshold alerts
-- model-, project-, line-item-, or plan-level breakdowns where the source supports them
-- UTC-aware reporting with local-time display
-- offline cache so the menu bar stays responsive
+- one binary owns the logic
+- provider integrations stay behind one adapter boundary
+- the menu bar stays thin
 
 ## Non-goals for v1
 
-- scraping ChatGPT web pages
-- scraping Cursor, Claude, Windsurf, or other vendor dashboards
-- using undocumented/private endpoints
-- pretending unsupported subscription usage is authoritative
-- a full native macOS app
+- scraping ChatGPT pages
+- scraping Cursor, Claude, Windsurf, or similar dashboards
+- using undocumented or private endpoints
+- presenting unsupported subscription usage as authoritative
+- building a full native macOS app before the data model is stable
 
-## Official sources
+## Working rules
+
+- billing totals must come from authoritative rows, not ad hoc CLI math
+- the UI must clearly label whether a number is API-backed, imported, manual, or unsupported
+- stale cached data is acceptable for read flows if it is labeled clearly
+- the product should optimize for fast status checks, not heavy reporting
+
+## Official references
 
 - https://platform.openai.com/docs/api-reference/usage/cost
 - https://help.openai.com/en/articles/10478918-api-usage-dashboard
 - https://help.openai.com/en/articles/9687866-admin-and-audit-logs-api-for-the-api-platform
 - https://help.openai.com/en/articles/12642688-using-credits-for-flexible-usage-in-chatgpt-free-go-plus-pro
-
-## Document map
-
-- `docs/PLAN.md`: implementation phases and milestones
-- `docs/ARCHITECTURE.md`: system design and data flow
-- `docs/OPENAI_SURFACES.md`: official API/UI surfaces and limitations
-
-## Integration strategy
-
-- Phase 1: define a shared usage schema and ship the fastest trustworthy surfaces for indie developers
-- Phase 2: add more providers through official APIs, documented exports, or explicit manual/import flows
-- Phase 3: unify cross-provider reporting around a shared internal schema and source-confidence model
-
-## Implementation guardrails
-
-- billing totals must be derived from idempotent syncs and authoritative cost rows, not from incremental arithmetic in the CLI
-- the product must distinguish authoritative data from imported, manual, estimated, or unsupported usage in both storage and UX
-- the UX should optimize for a fast “how close am I to my limit?” check, not just financial reporting
-- users should be told clearly which providers are fully supported, partially supported, or unsupported

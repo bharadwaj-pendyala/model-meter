@@ -1,5 +1,7 @@
 # Architecture
 
+This document explains the target system shape. Read the quickstart first if you just want to run the sample.
+
 ## Stack
 
 - Language: Go
@@ -11,7 +13,7 @@
 
 ## Why Go + SwiftBar
 
-This keeps the system simple:
+This stack keeps the product easy to reason about:
 
 - one compiled binary owns network calls, normalization, caching, and formatting
 - one shared domain model can support many providers/tools

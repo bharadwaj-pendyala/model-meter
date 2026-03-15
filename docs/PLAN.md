@@ -1,33 +1,41 @@
 # Build Plan
 
-## Product goal
+## Goal
 
-Build a small, reliable tracker that lets an indie developer quickly check AI tool usage from the command line and the macOS menu bar while they are working.
+Build a small, reliable tracker that lets a developer check AI usage quickly from:
 
-The implementation strategy is:
+- the command line
+- the macOS menu bar
 
-- design the core around multiple providers/tools
-- ship the fastest trustworthy surfaces first
-- add tools like Codex, Claude, Cursor, and Windsurf through adapters when they have a trustworthy data source
+## Product rule
 
-## Scope choice
-
-V1 should optimize for trustworthiness and speed of access, not for any single provider integration.
+V1 should favor trust and simplicity over broad coverage.
 
 That means:
 
-- supported: official API usage and costs where a provider exposes them
-- supported: documented imports or user-entered plan counters where a provider does not expose a public API
-- supported: budget thresholds configured locally in the tool
-- supported by design, but not yet implemented: multiple providers in one shared reporting model
-- not supported in v1: undocumented polling of web dashboards for subscription-plan usage
-- not supported in v1: undocumented scraping of Cursor, Claude, Windsurf, or other vendor dashboards
+- use official APIs when they exist
+- use documented imports or manual counters when they do not
+- clearly label unsupported cases instead of guessing
 
-Operational constraints for v1:
+## In scope for v1
 
-- some providers will only support partial visibility in v1, so the UX must communicate support level explicitly
-- stale cached data is a supported degraded state for read commands and the menu bar, not an automatic hard failure
-- sync must be idempotent and safe to rerun on overlapping time windows
+- official API usage and cost data
+- documented imports
+- manual plan counters
+- local budgets and thresholds
+- cached reads with freshness labels
+
+## Out of scope for v1
+
+- scraping vendor dashboards
+- undocumented endpoints
+- fake automation for unsupported providers
+
+## Constraints that shape the design
+
+- some providers will only have partial support
+- stale cache is acceptable for read commands if labeled clearly
+- sync must be idempotent across overlapping time windows
 
 ## Milestones
 

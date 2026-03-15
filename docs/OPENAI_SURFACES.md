@@ -1,5 +1,7 @@
 # OpenAI Surfaces
 
+This file is intentionally narrow. It only covers what OpenAI exposes in a way this project can trust.
+
 ## What is officially trackable from a CLI
 
 Officially documented for API organizations:
@@ -37,9 +39,9 @@ Relevant docs:
 
 ## Product implication
 
-For the broader product, OpenAI should be treated as the first provider adapter, not the whole architecture.
+OpenAI should be treated as the first provider adapter, not the whole product.
 
-For the target audience, this means OpenAI may offer better automation for API usage than for ChatGPT-plan usage. The product should present that difference clearly rather than pretending both are equally trackable.
+In practice, OpenAI may support better automation for API usage than for ChatGPT-plan usage. The product should say that plainly instead of pretending both are equally trackable.
 
 The tracker should have two explicit modes in the product language for the OpenAI integration:
 
