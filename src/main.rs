@@ -167,6 +167,7 @@ fn run(args: &[String]) -> Result<String, String> {
         .collect();
 
     match filtered_args.as_slice() {
+        ["codex"] => render_codex_usage(json),
         ["providers"] => Ok(render_providers(json)),
         ["auth", "validate"] => render_auth_validation("openai", json),
         ["auth", "validate", provider] => render_auth_validation(provider, json),
@@ -187,6 +188,7 @@ fn help_text() -> String {
     text.push_str("model-meter 0.1.0\n");
     text.push_str("Quick usage checks for AI tools.\n\n");
     text.push_str("Commands:\n");
+    text.push_str("  model-meter codex [--json]\n");
     text.push_str("  model-meter providers [--json]\n");
     text.push_str("  model-meter auth validate [openai|codex|claude] [--json]\n");
     text.push_str("  model-meter usage codex [--json]\n");
@@ -934,6 +936,19 @@ mod tests {
         let output = run(&[]).unwrap();
         assert!(output.contains("model-meter 0.1.0"));
         assert!(output.contains("model-meter status"));
+        assert!(output.contains("model-meter codex"));
+    }
+
+    #[test]
+    fn short_codex_command_routes_to_usage() {
+        let short = run(&["codex".to_string()]);
+        let long = run(&["usage".to_string(), "codex".to_string()]);
+        assert_eq!(short.is_ok(), long.is_ok());
+        match (short, long) {
+            (Ok(short_output), Ok(long_output)) => assert_eq!(short_output, long_output),
+            (Err(short_err), Err(long_err)) => assert_eq!(short_err, long_err),
+            _ => panic!("short and long codex commands should behave the same"),
+        }
     }
 
     #[test]

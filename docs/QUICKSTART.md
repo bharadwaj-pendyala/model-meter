@@ -11,6 +11,8 @@ cargo build
 ## 2. Run the sample commands
 
 ```bash
+cargo run -- codex
+cargo run -- codex --json
 cargo run -- providers
 cargo run -- auth validate openai
 cargo run -- auth validate codex
@@ -62,6 +64,7 @@ export MODEL_METER_CURSOR_LIMIT=50
 - `auth validate openai` checks for `OPENAI_ADMIN_KEY` first, then falls back to Codex CLI session detection
 - `auth validate codex` reports whether a Codex CLI session is present
 - `auth validate claude` explains the current Claude limitation
+- `codex` is the short command for the current Codex usage snapshot
 - `usage codex` fetches the current Codex usage windows from the logged-in local Codex session and shows percent left
 - `status` prints a human-readable summary
 - `status --json` prints the same data in JSON form

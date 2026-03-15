@@ -24,6 +24,7 @@ This repo currently ships a small Rust CLI sample.
 
 Available commands:
 
+- `model-meter codex`
 - `model-meter providers`
 - `model-meter auth validate openai`
 - `model-meter auth validate codex`
@@ -35,7 +36,7 @@ Available commands:
 Current behavior:
 
 - OpenAI can be detected through `OPENAI_ADMIN_KEY` or an existing Codex CLI login
-- Codex usage can be read from an existing ChatGPT-backed Codex CLI session and shown as percentage left for the current windows
+- Codex usage can be read from an existing ChatGPT-backed Codex CLI session and shown as percentage left for the current windows through `model-meter codex`
 - Claude currently exposes only a documented in-session `/cost` surface, so this sample still treats Claude as manual outside the Claude session
 - Cursor and similar tools can be shown with manual counters
 - broader vendor sync is still not implemented yet
