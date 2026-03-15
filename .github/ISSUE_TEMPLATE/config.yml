@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions about using model-meter
+    url: https://github.com/bharadwaj-pendyala/model-meter/issues/new/choose
+    about: Open an issue in this repository if you run into trouble using the tool.

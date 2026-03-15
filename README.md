@@ -1,46 +1,63 @@
 # Model Meter
 
-`model-meter` is a small CLI for checking AI tool usage without opening vendor dashboards.
+`model-meter` is an open-source, model-agnostic CLI for checking AI tool usage from the terminal.
 
-Right now, the main working flow is Codex:
+The project is intended to be provider-agnostic:
 
-- detect your existing Codex login
-- fetch your current Codex usage windows
-- show how much usage is left
+- one tool for checking usage across AI products
+- one clear support model for automated, manual, and unsupported providers
+- start with the integrations that are practical today and expand carefully over time
 
-## What You Can Do Today
+## Current Support
 
-- run `model-meter codex` to see your current Codex usage
-- run `model-meter codex --json` for machine-readable output
-- run `model-meter status` for a broader provider snapshot
-- use manual counters for providers that do not yet have a supported automated usage surface
+What works today:
+
+- `model-meter codex` reads the current Codex usage snapshot from an existing local Codex login session
+- `model-meter codex --json` returns the same snapshot in JSON
+- `model-meter status` shows the current provider summary
+- `model-meter auth validate codex` checks whether a Codex session is available
+- manual counters can be used for providers that do not yet have a supported automated usage path
+
+So the current shape is:
+
+- Model Meter is model-agnostic by design
+- Codex is the first real integration
+- other providers are represented with manual or partial support until trustworthy automated sources exist
+
+Current provider state:
+
+- `codex`: supported for usage snapshot lookup from an existing local session
+- `openai`: auth detection through `OPENAI_ADMIN_KEY` or Codex login detection
+- `claude`: manual-only outside the Claude session
+- `cursor`: manual-only
+- `windsurf`: manual-only
+
+## What This Tool Does Not Do Yet
+
+- full multi-provider syncing
+- dashboard scraping
+- undocumented private integrations presented as authoritative
+- packaged install methods beyond source install and GitHub release binaries
 
 ## Install
 
-### Option 1: run from source
+### GitHub release binary
 
-```bash
-cargo run -- codex
-```
-
-### Option 2: install the binary locally
-
-```bash
-cargo install --path .
-model-meter codex
-```
-
-### Option 3: download a release binary
-
-Download the archive for your platform from the GitHub Releases page, extract it, and place `model-meter` somewhere on your `PATH`.
+Download the archive for your platform from Releases, extract it, and place `model-meter` on your `PATH`.
 
 Releases:
 
 `https://github.com/bharadwaj-pendyala/model-meter/releases`
 
-## Quick Start
+### Build from source
 
-If you already use the Codex CLI and are logged in, this is the main command:
+```bash
+cargo install --path .
+```
+
+## Usage
+
+If you already use Codex and are logged in, the main working command today is:
 
 ```bash
 model-meter codex
@@ -55,55 +72,41 @@ Codex usage
 - weekly window: 93% left (7% used), resets in 5d 3h
 ```
 
-For JSON:
+For JSON output:
 
 ```bash
 model-meter codex --json
 ```
 
-## How It Works
+Other useful commands:
 
-For Codex, `model-meter` currently reuses your existing local Codex login session.
+```bash
+model-meter providers
+model-meter auth validate codex
+model-meter status
+model-meter status --json
+```
 
-That means:
+## Requirements For `model-meter codex`
 
-- you do not need to set a separate OpenAI key just to read Codex usage
-- you do need to be logged in through the Codex CLI already
+`model-meter codex` is one provider-specific command inside a broader model-agnostic CLI.
 
-You can check that with:
+This command works when:
+
+- you already have the Codex CLI installed
+- you are already logged in through Codex
+- the local Codex session is valid
+- the current Codex usage endpoint remains available
+
+Check your Codex login with:
 
 ```bash
 codex login status
 ```
 
-## Available Commands
-
-```bash
-model-meter codex
-model-meter codex --json
-model-meter providers
-model-meter auth validate openai
-model-meter auth validate codex
-model-meter auth validate claude
-model-meter usage codex
-model-meter usage codex --json
-model-meter status
-model-meter status --json
-```
-
-## Provider Support
-
-Current support is intentionally uneven and explicit.
-
-- `codex`: working usage lookup from an existing local Codex session
-- `openai`: auth detection through `OPENAI_ADMIN_KEY` or Codex CLI login
-- `claude`: manual-only outside the Claude session
-- `cursor`: manual counters only
-- `windsurf`: manual counters only
-
 ## Manual Counters
 
-For providers without a supported automated usage source yet, you can set local counters.
+For providers without supported automated usage yet, you can supply local counters so the tool still acts as a shared usage meter.
 
 Examples:
 
@@ -115,19 +118,38 @@ export MODEL_METER_CURSOR_USED=15
 export MODEL_METER_CURSOR_LIMIT=50
 ```
 
-You can also set optional local counters for OpenAI:
+## Roadmap
 
-```bash
-export MODEL_METER_OPENAI_USED=18
-export MODEL_METER_OPENAI_LIMIT=100
-```
+What users can expect next:
 
-## Current Limitations
+- better packaging and install flow
+- cleaner provider status output
+- clearer support tiers per provider
+- more reliable configuration and error messages
+- expansion to additional providers such as Claude, Cursor, Windsurf, and future tools only where the data source is trustworthy
+- a menu bar layer once the CLI contract is stable
 
-- `model-meter codex` is not calling a public documented `codex usage` command
-- it currently relies on the same local session-backed usage path the Codex client appears to use
-- Claude does not yet have a documented non-interactive usage command that this tool can call from outside the Claude session
-- broader multi-provider sync is not implemented yet
+What will continue to guide the project:
+
+- prefer official or clearly-supported usage surfaces
+- avoid misleading users with fake precision
+- label unsupported or partial integrations clearly
+
+## Open Source
+
+This repository is open for public use, feedback, and contributions.
+
+If you try the tool and hit a problem, please open an issue here:
+
+`https://github.com/bharadwaj-pendyala/model-meter/issues`
+
+If you want to contribute code, please read [CONTRIBUTING.md](/Users/bharad/Downloads/model-meter/CONTRIBUTING.md) first.
+
+If you want to request support for another provider, open an issue and describe:
+
+- the provider
+- what usage surface exists today
+- whether that surface is official, manual, or unsupported
 
 ## Docs
 

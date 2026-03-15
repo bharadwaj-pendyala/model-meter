@@ -1,6 +1,6 @@
 # Quickstart
 
-This sample is meant to be easy to try locally. It does not talk to provider APIs yet. It gives you a simple status view from environment-based inputs.
+This sample is meant to be easy to try locally. `model-meter` is intended to be model-agnostic, but today the strongest working integration is Codex. Other providers are currently represented through auth detection or manual counters.
 
 ## 1. Build
 
@@ -64,7 +64,7 @@ export MODEL_METER_CURSOR_LIMIT=50
 - `auth validate openai` checks for `OPENAI_ADMIN_KEY` first, then falls back to Codex CLI session detection
 - `auth validate codex` reports whether a Codex CLI session is present
 - `auth validate claude` explains the current Claude limitation
-- `codex` is the short command for the current Codex usage snapshot
+- `codex` is the short command for the current Codex usage snapshot inside the broader model-agnostic CLI
 - `usage codex` fetches the current Codex usage windows from the logged-in local Codex session and shows percent left
 - `status` prints a human-readable summary
 - `status --json` prints the same data in JSON form
