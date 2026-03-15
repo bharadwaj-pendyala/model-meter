@@ -124,6 +124,35 @@ For JSON output:
 model-meter codex --json
 ```
 
+Other provider examples:
+
+```text
+$ model-meter cursor
+Cursor usage
+- plan: free
+- usage: not exposed through the local session yet
+- state: session-detected
+- detail: Local Cursor session markers were detected in .../Cursor/User/globalStorage/state.vscdb with plan free. Current local state does not expose quota or remaining percentage yet.
+```
+
+```text
+$ model-meter claude
+Claude usage
+- account: you@example.com
+- plan: claude_free
+- usage: not exposed through the local session yet
+- state: session-detected
+- detail: Local Claude desktop session markers were detected in .../Claude. Organization type: claude_free. Current local state does not expose quota or remaining percentage yet.
+```
+
+```text
+$ model-meter windsurf
+Windsurf usage
+- usage: session not detected
+- state: missing
+- detail: Windsurf or Codeium local app data was not found in the standard macOS paths.
+```
+
 Other useful commands:
 
 ```bash
@@ -162,6 +191,22 @@ Check your Codex login with:
 ```bash
 codex login status
 ```
+
+## Why Some Providers Do Not Show A Usage Percentage Yet
+
+For Codex, the local logged-in session currently exposes real rate-limit window data, so `model-meter` can calculate percent left.
+
+For Cursor and Claude, the local session data I can currently read exposes account and plan markers, but not a trustworthy pair of values like:
+
+- used quota
+- total quota
+
+Without both of those numbers, a remaining percentage would be made up rather than measured.
+
+So the current rule is:
+
+- if the local session exposes real usage windows or used/limit values, `model-meter` computes a percentage
+- if the local session only exposes account metadata, `model-meter` reports that honestly and does not invent a percentage
 
 ## Roadmap
 
