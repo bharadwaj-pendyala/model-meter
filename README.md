@@ -31,9 +31,6 @@ The current strongest integration is Codex. The broader product direction is a s
 Current first working integration:
 
 - Codex usage tracking from an existing local Codex session
-- Claude official cost tracking from an Anthropic admin key
-- Cursor official team usage metrics from a Cursor admin key
-- Windsurf official enterprise credit usage from a Windsurf service key
 
 ## Current Support
 
@@ -55,59 +52,26 @@ Current provider state:
 
 - `codex`: supported for usage snapshot lookup from an existing local session
 - `openai`: auth detection through `OPENAI_ADMIN_KEY` or Codex login detection
-- `claude`: official monthly cost lookup through Anthropic Admin API, with optional limit-based percentage
-- `cursor`: official usage and spend lookup through Cursor Admin API, with optional limit-based percentage
-- `windsurf`: official enterprise credit and per-user analytics lookup through Windsurf APIs
+- `claude`: manual-only outside the Claude session
+- `cursor`: manual-only
+- `windsurf`: manual-only
 
 ## Provider Support Matrix
 
 | Provider | Current support | What it means |
 | --- | --- | --- |
 | Codex | Working usage snapshot | `model-meter codex` shows current usage left from an existing local Codex session |
-| Cursor | Official API + optional limits | team usage metrics and spend can be fetched; percentage-left depends on limits you provide |
-| Claude | Official API + optional limits | monthly Claude cost can be fetched through the Anthropic Admin API |
-| Windsurf | Official API | team credits and per-user analytics can be fetched through Windsurf enterprise APIs |
+| Cursor | Manual | you can represent usage with local counters for now |
+| Claude | Manual / partial | manual counters today; no supported non-interactive usage command integrated yet |
+| Windsurf | Manual | you can represent usage with local counters for now |
 | OpenAI API | Auth detection | API auth can be detected, but full usage syncing is not the current primary flow |
 
 Search-intent summary:
 
 - `Codex usage CLI`: supported today
-- `Cursor usage tracker`: supported through the official Cursor Admin API
-- `Claude usage tracker`: supported through the official Anthropic Admin API
-- `Windsurf usage tracker`: supported through official Windsurf enterprise APIs
- 
-## Provider Setup
-
-Codex:
-
-```bash
-model-meter codex
-```
-
-Claude:
-
-```bash
-export ANTHROPIC_ADMIN_KEY=your-key
-export CLAUDE_MONTHLY_LIMIT_USD=100
-model-meter claude
-```
-
-Cursor:
-
-```bash
-export CURSOR_ADMIN_API_KEY=your-key
-export CURSOR_REQUEST_LIMIT=500
-export CURSOR_SPEND_LIMIT_DOLLARS=20
-model-meter cursor
-```
-
-Windsurf:
-
-```bash
-export WINDSURF_SERVICE_KEY=your-key
-export WINDSURF_USER_EMAIL=you@example.com
-model-meter windsurf
-```
+- `Cursor usage tracker`: project direction, manual support today
+- `Claude usage tracker`: project direction, manual support today
+- `Windsurf usage tracker`: project direction, manual support today
 
 ## What This Tool Does Not Do Yet
 
