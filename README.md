@@ -2,6 +2,16 @@
 
 `model-meter` is an open-source, model-agnostic CLI for tracking AI tool usage from the terminal.
 
+If you are searching for:
+
+- a Codex usage CLI
+- a Cursor usage tracker
+- a Claude usage tracker
+- a Windsurf usage tracker
+- a model-agnostic AI usage tool
+
+this repository is for that category of problem.
+
 The project is intended to be provider-agnostic:
 
 - one tool for checking usage across AI products such as Codex, Cursor, Claude, and Windsurf
@@ -17,6 +27,10 @@ Use `model-meter` if you want a tool that helps you:
 - understand what is supported today and what is still manual or unsupported
 
 The current strongest integration is Codex. The broader product direction is a shared usage meter across multiple AI coding tools.
+
+Current first working integration:
+
+- Codex usage tracking from an existing local Codex session
 
 ## Current Support
 
@@ -52,6 +66,13 @@ Current provider state:
 | Windsurf | Manual | you can represent usage with local counters for now |
 | OpenAI API | Auth detection | API auth can be detected, but full usage syncing is not the current primary flow |
 
+Search-intent summary:
+
+- `Codex usage CLI`: supported today
+- `Cursor usage tracker`: project direction, manual support today
+- `Claude usage tracker`: project direction, manual support today
+- `Windsurf usage tracker`: project direction, manual support today
+
 ## What This Tool Does Not Do Yet
 
 - full multi-provider syncing
@@ -73,6 +94,12 @@ Releases:
 
 ```bash
 cargo install --path .
+```
+
+Fastest path after install:
+
+```bash
+model-meter codex
 ```
 
 ## Usage
