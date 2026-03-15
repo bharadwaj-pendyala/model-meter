@@ -19,17 +19,16 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: model-meter-x86_64-unknown-linux-gnu
-            asset_path: model-meter-x86_64-unknown-linux-gnu.tar.gz
+            archive_name: model-meter-x86_64-unknown-linux-gnu.tar.gz
             binary_name: model-meter
           - os: windows-latest
             artifact_name: model-meter-x86_64-pc-windows-msvc
-            asset_path: model-meter-x86_64-pc-windows-msvc.zip
+            archive_name: model-meter-x86_64-pc-windows-msvc.zip
             binary_name: model-meter.exe
           - os: macos-14
             artifact_name: model-meter-aarch64-apple-darwin
-            asset_path: model-meter-aarch64-apple-darwin.pkg
+            archive_name: model-meter-aarch64-apple-darwin.tar.gz
             binary_name: model-meter
-            package_identifier: io.github.bharadwaj-pendyala.model-meter
 
     steps:
       - name: Checkout
@@ -41,129 +40,13 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - name: Derive macOS package version
-        if: runner.os == 'macOS'
-        id: macos_version
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="0.0.${GITHUB_RUN_NUMBER}"
-          fi
-
-          echo "value=${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Validate macOS signing secrets
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          APPLE_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64 }}
-          APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}
-          APPLE_DEVELOPER_ID_APPLICATION_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_IDENTITY }}
-          APPLE_DEVELOPER_ID_INSTALLER_CERT_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_P12_BASE64 }}
-          APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}
-          APPLE_DEVELOPER_ID_INSTALLER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_IDENTITY }}
-          APPLE_NOTARY_API_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_API_KEY_P8_BASE64 }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-        run: |
-          set -euo pipefail
-
-          missing=()
-          for var in \
-            APPLE_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64 \
-            APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD \
-            APPLE_DEVELOPER_ID_APPLICATION_IDENTITY \
-            APPLE_DEVELOPER_ID_INSTALLER_CERT_P12_BASE64 \
-            APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD \
-            APPLE_DEVELOPER_ID_INSTALLER_IDENTITY \
-            APPLE_NOTARY_API_KEY_P8_BASE64 \
-            APPLE_NOTARY_KEY_ID \
-            APPLE_NOTARY_ISSUER_ID; do
-            if [[ -z "${!var:-}" ]]; then
-              missing+=("${var}")
-            fi
-          done
-
-          if (( ${#missing[@]} > 0 )); then
-            printf 'Missing required macOS release secrets: %s\n' "${missing[*]}" >&2
-            exit 1
-          fi
-
-      - name: Import Apple signing certificates
-        if: runner.os == 'macOS'
-        id: macos_keychain
-        shell: bash
-        env:
-          APPLE_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64 }}
-          APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}
-          APPLE_DEVELOPER_ID_INSTALLER_CERT_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_P12_BASE64 }}
-          APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          keychain_path="$RUNNER_TEMP/model-meter-signing.keychain-db"
-          keychain_password="$(uuidgen)"
-          application_cert_path="$RUNNER_TEMP/developer-id-application.p12"
-          installer_cert_path="$RUNNER_TEMP/developer-id-installer.p12"
-
-          printf '%s' "$APPLE_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64" | base64 -D > "$application_cert_path"
-          printf '%s' "$APPLE_DEVELOPER_ID_INSTALLER_CERT_P12_BASE64" | base64 -D > "$installer_cert_path"
-
-          security create-keychain -p "$keychain_password" "$keychain_path"
-          security set-keychain-settings -lut 21600 "$keychain_path"
-          security unlock-keychain -p "$keychain_password" "$keychain_path"
-          security list-keychains -d user -s "$keychain_path"
-          security default-keychain -d user -s "$keychain_path"
-
-          security import "$application_cert_path" \
-            -k "$keychain_path" \
-            -P "$APPLE_DEVELOPER_ID_APPLICATION_CERT_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
-
-          security import "$installer_cert_path" \
-            -k "$keychain_path" \
-            -P "$APPLE_DEVELOPER_ID_INSTALLER_CERT_PASSWORD" \
-            -T /usr/bin/pkgbuild \
-            -T /usr/bin/productsign \
-            -T /usr/bin/security
-
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "$keychain_password" \
-            "$keychain_path"
-
-          echo "path=$keychain_path" >> "$GITHUB_OUTPUT"
-
-      - name: Sign macOS binary
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          APPLE_DEVELOPER_ID_APPLICATION_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_IDENTITY }}
-        run: |
-          set -euo pipefail
-
-          codesign \
-            --force \
-            --options runtime \
-            --timestamp \
-            --sign "$APPLE_DEVELOPER_ID_APPLICATION_IDENTITY" \
-            "target/release/${{ matrix.binary_name }}"
-
-          codesign --verify --verbose=4 "target/release/${{ matrix.binary_name }}"
-
-      - name: Package archive (Linux)
-        if: runner.os == 'Linux'
+      - name: Package archive (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir "${{ matrix.artifact_name }}"
           cp "target/release/${{ matrix.binary_name }}" "${{ matrix.artifact_name }}/model-meter"
           cp README.md LICENSE "${{ matrix.artifact_name }}/"
-          tar -czf "${{ matrix.asset_path }}" "${{ matrix.artifact_name }}"
+          tar -czf "${{ matrix.archive_name }}" "${{ matrix.artifact_name }}"
 
       - name: Package archive (Windows)
         if: runner.os == 'Windows'
@@ -172,65 +55,13 @@ jobs:
           New-Item -ItemType Directory -Path "${{ matrix.artifact_name }}" | Out-Null
           Copy-Item "target/release/${{ matrix.binary_name }}" "${{ matrix.artifact_name }}/model-meter.exe"
           Copy-Item README.md, LICENSE "${{ matrix.artifact_name }}/"
-          Compress-Archive -Path "${{ matrix.artifact_name }}" -DestinationPath "${{ matrix.asset_path }}"
-
-      - name: Build signed macOS installer package
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          APPLE_DEVELOPER_ID_INSTALLER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_IDENTITY }}
-        run: |
-          set -euo pipefail
-
-          package_root="$RUNNER_TEMP/model-meter-pkg-root"
-          unsigned_package="$RUNNER_TEMP/model-meter-unsigned.pkg"
-
-          mkdir -p "$package_root/usr/local/bin"
-          cp "target/release/${{ matrix.binary_name }}" "$package_root/usr/local/bin/model-meter"
-          chmod 755 "$package_root/usr/local/bin/model-meter"
-
-          pkgbuild \
-            --root "$package_root" \
-            --identifier "${{ matrix.package_identifier }}" \
-            --version "${{ steps.macos_version.outputs.value }}" \
-            --install-location "/" \
-            "$unsigned_package"
-
-          productsign \
-            --sign "$APPLE_DEVELOPER_ID_INSTALLER_IDENTITY" \
-            --timestamp \
-            "$unsigned_package" \
-            "${{ matrix.asset_path }}"
-
-          pkgutil --check-signature "${{ matrix.asset_path }}"
-
-      - name: Notarize and staple macOS installer package
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          APPLE_NOTARY_API_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_API_KEY_P8_BASE64 }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-        run: |
-          set -euo pipefail
-
-          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
-          printf '%s' "$APPLE_NOTARY_API_KEY_P8_BASE64" | base64 -D > "$api_key_path"
-
-          xcrun notarytool submit "${{ matrix.asset_path }}" \
-            --key "$api_key_path" \
-            --key-id "$APPLE_NOTARY_KEY_ID" \
-            --issuer "$APPLE_NOTARY_ISSUER_ID" \
-            --wait
-
-          xcrun stapler staple "${{ matrix.asset_path }}"
-          spctl -a -vv -t install "${{ matrix.asset_path }}"
+          Compress-Archive -Path "${{ matrix.artifact_name }}" -DestinationPath "${{ matrix.archive_name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.asset_path }}
+          path: ${{ matrix.archive_name }}
 
   release:
     name: Publish release
@@ -246,7 +77,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd dist
-          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.pkg" \) -print0 | sort -z | xargs -0 sha256sum > checksums.txt
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -print0 | sort -z | xargs -0 sha256sum > checksums.txt
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -254,5 +85,4 @@ jobs:
           files: |
             dist/**/*.tar.gz
             dist/**/*.zip
-            dist/**/*.pkg
             dist/checksums.txt
