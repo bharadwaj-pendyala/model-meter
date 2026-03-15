@@ -30,6 +30,14 @@ cargo install --path .
 model-meter codex
 ```
 
+### Option 3: download a release binary
+
+Download the archive for your platform from the GitHub Releases page, extract it, and place `model-meter` somewhere on your `PATH`.
+
+Releases:
+
+`https://github.com/bharadwaj-pendyala/model-meter/releases`
+
 ## Quick Start
 
 If you already use the Codex CLI and are logged in, this is the main command:
