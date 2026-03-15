@@ -85,6 +85,32 @@ Search-intent summary:
 
 Download the archive for your platform from Releases, extract it, and place `model-meter` on your `PATH`.
 
+Examples:
+
+macOS or Linux, system-wide:
+
+```bash
+chmod +x model-meter
+sudo mv model-meter /usr/local/bin/model-meter
+```
+
+macOS or Linux, user-local:
+
+```bash
+chmod +x model-meter
+mkdir -p "$HOME/.local/bin"
+mv model-meter "$HOME/.local/bin/model-meter"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Windows PowerShell, user-local:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\\bin" | Out-Null
+Move-Item .\model-meter.exe "$HOME\\bin\\model-meter.exe"
+$env:Path = "$HOME\\bin;" + $env:Path
+```
+
 Releases:
 
 `https://github.com/bharadwaj-pendyala/model-meter/releases`
