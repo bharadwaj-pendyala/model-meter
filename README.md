@@ -83,18 +83,26 @@ Search-intent summary:
 
 ### GitHub release binary
 
-Download the archive for your platform from Releases, extract it, and place `model-meter` on your `PATH`.
+Download the release for your platform from Releases.
 
 Examples:
 
-macOS or Linux, system-wide:
+macOS:
+
+```bash
+open model-meter-aarch64-apple-darwin.pkg
+```
+
+The signed, notarized installer places `model-meter` in `/usr/local/bin`, so it should run from a normal Terminal session without extra `PATH` changes. macOS may still prompt for administrator credentials during installation because the package writes to a system-wide location.
+
+Linux, system-wide:
 
 ```bash
 chmod +x model-meter
 sudo mv model-meter /usr/local/bin/model-meter
 ```
 
-macOS or Linux, user-local:
+Linux, user-local:
 
 ```bash
 chmod +x model-meter
