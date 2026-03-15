@@ -25,10 +25,6 @@ jobs:
             artifact_name: model-meter-x86_64-pc-windows-msvc
             archive_name: model-meter-x86_64-pc-windows-msvc.zip
             binary_name: model-meter.exe
-          - os: macos-13
-            artifact_name: model-meter-x86_64-apple-darwin
-            archive_name: model-meter-x86_64-apple-darwin.tar.gz
-            binary_name: model-meter
           - os: macos-14
             artifact_name: model-meter-aarch64-apple-darwin
             archive_name: model-meter-aarch64-apple-darwin.tar.gz
